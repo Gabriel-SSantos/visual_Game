@@ -1,23 +1,343 @@
 import logo from './logo.svg';
 import './App.css';
+import { useEffect, useRef, useState } from 'react';
+import { FilesetResolver, DrawingUtils, HandLandmarker} from '@mediapipe/tasks-vision';
+import {HandLandmarker as MediaPipeHandLandmarker} from '@mediapipe/tasks-vision';
+
+class Quadros{
+    constructor({x,y,l,a,color}){
+        this.x = x;
+        this.y = y;
+        this.l = l;
+        this.a = a;
+        this.color = color;
+        this.velocity = 0.5;
+        this.queda = false;
+        
+    }
+    desenhar(ctx){
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x,this.y,this.l,this.a)
+    }
+    cair(){
+      this.y += this.velocity
+    }
+    moverH(b){
+      if(this.y < b.y && this.y + this.a > b.y + b.a){
+        if(this.x > b.x && this.x < b.x + b.l){
+          this.x = b.x + b.l
+        }
+        else if(this.x + this.l >  b.x && this.x < b.x ){
+          this.x = b.x - this.l - 1
+        } 
+        
+      }
+    }
+    moverV(b){
+      if(this.x < b.x && this.x + this.l > b.x + b.l){
+        if(this.y < b.y + b.a && this.y > b.y && !this.queda){
+          this.velocity *= 2
+          this.queda = true
+        } else if(this.y + this.a > b.y && this.y < b.y){
+          this.y = b.y - this.a - 1
+        }
+      }
+    }
+    marcar(c){
+      if(this.y + this.a > c.y && this.x > c.x && this.x + this.l < c.x+c.l){
+        this.restart()
+        this.velocity += 0.2
+        return true
+      } else if(this.y + this.a > c.y){
+         this.restart()
+      }
+    }
+    restart(){
+      this.y = Math.floor(Math.random()*-200)
+      this.x = Math.floor(Math.random()* 500 + 10)
+      this.velocity = 0.5
+      this.queda = false
+    }
+    
+}
+
 
 function App() {
+  const Height = 480
+  const Width = 640
+
+  const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+
+  const [pontos,setPontos] = useState(0)
+  let dimensoes = 70
+  let blocos = [
+      new Quadros({
+          x: 100,
+          y: 0,
+          a: dimensoes,
+          l: dimensoes,
+          color: 'red'
+        }),
+      new Quadros({
+          x: 300,
+          y: -300,
+          a: dimensoes,
+          l: dimensoes,
+          color: 'red'
+        }),
+      new Quadros({
+        x: 500,
+        y: 10,
+        a: dimensoes,
+        l: dimensoes,
+        color: 'blue'
+      }),
+      new Quadros({
+        x: 100,
+        y: -400,
+        a: dimensoes,
+        l: dimensoes,
+        color: 'blue'
+      }),
+      new Quadros({
+        x: 200,
+        y: 100,
+        a: dimensoes,
+        l: dimensoes,
+        color: 'green'
+      }),
+      new Quadros({
+        x: 400,
+        y: -50,
+        a: dimensoes,
+        l: dimensoes,
+        color: 'green'
+      }) 
+    ]
+
+  let save = [
+      new Quadros({
+        x: 0,
+        y: 460,
+        a: 10,
+        l: 640/3,
+        color: 'green'
+      }),
+      new Quadros({
+        x: 640/3,
+        y: 460,
+        a: 10,
+        l: 640/3,
+        color: 'red'
+      }),
+      new Quadros({
+        x: (640/3)*2,
+        y: 460,
+        a: 10,
+        l: 640/3,
+        color: 'blue'
+      })
+    ]
+    function restart(){
+      setPontos(0)
+      blocos.forEach(bloco => {bloco.restart()})
+    }
+  
+  useEffect(()=>{
+
+    let lastVideoTime = -1
+    let animationFrameId
+    let handLandmarker
+    let frameCount = 0
+
+    const canvasCtx = canvasRef.current.getContext('2d')
+    
+    async function setupMediaPipe(){
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm" 
+      );
+
+      handLandmarker = await HandLandmarker.createFromOptions(vision,{
+        baseOptions:{
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-tasks/hand_landmarker/hand_landmarker.task",
+          delegate: 'GPU'
+        },
+        numHands: 2,
+        runningMode: 'VIDEO'
+      })
+      startCamera()
+    }
+
+    async function startCamera(){
+
+    try{
+      const constraints = {
+        video: { 
+            width: { ideal: 640 }, 
+            height: { ideal: 480 },
+            frameRate: { ideal: 30 } // Alinha a captura com 30 FPS
+          }
+        }
+    
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+
+      if(videoRef.current){
+        videoRef.current.srcObject = stream
+        videoRef.current.addEventListener('loadeddata',predictVideo)
+      }
+    } catch (err) {
+        console.error("Erro ao acessar a câmera:", err);
+      }
+    }
+    let pnts = [{x:0,y:0,z:0},{x:0,y:0,z:0}]
+    
+    let dedos = []
+    
+    function predictVideo(){
+      
+      const video = videoRef.current
+      const canvas = canvasRef.current
+
+      if(!video || !canvas || !canvasCtx) return 
+
+      if(canvas.width !== video.videoWdth || canvas.height !== video.videoHeight){
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+    
+      frameCount++
+      
+      if(frameCount % 2 === 0 && video.currentTime !== lastVideoTime){
+        lastVideoTime = video.currentTime
+        
+        const result = handLandmarker.detectForVideo(video, Date.now());
+        
+        if(result.landmarks){
+          pnts = [{x:0,y:0,z:0},{x:0,y:0,z:0}]
+          result.landmarks.forEach((landmarks,i) => {
+            console.log(i)
+            pnts[i] = landmarks[8]
+          })
+          for (const landmarks of result.landmarks){
+            canvasCtx.save()
+          }
+         
+        }   
+      }
+      canvasCtx.clearRect(0,0,canvas.width,canvas.height)
+      
+      dedos = []
+      pnts.forEach(pnt => {
+        dedos.push(new Quadros({
+          x: ((1 - pnt.x)*canvas.width - 24/2),
+          y: ((pnt.y * canvas.height) - 24/2),
+          a: 24,
+          l: 24,
+          color: 'transparent'
+        }))
+      })
+
+      dedos.forEach(draw => {
+        draw.desenhar(canvasCtx)
+      })
+
+      blocos.forEach(draw=>{
+        draw.moverV(dedos[1])
+        draw.moverH(dedos[1])
+        draw.moverV(dedos[0])
+        draw.moverH(dedos[0])
+        draw.cair()
+      
+        if( draw.marcar(save[0]) && draw.color === 'green' ||
+            draw.marcar(save[1]) && draw.color === 'red' ||
+            draw.marcar(save[2]) && draw.color === 'blue'){
+            setPontos((ponto)=> ponto + 1)} 
+
+        draw.desenhar(canvasCtx)
+      })
+      save.forEach(draw => {
+        draw.desenhar(canvasCtx)
+      })
+     
+
+      animationFrameId = requestAnimationFrame(predictVideo)
+    }
+
+    setupMediaPipe()
+
+    return ()=>{
+      cancelAnimationFrame(animationFrameId)
+      if(videoRef.current?.srcObject){
+        videoRef.current.srcObject.getTracks().forEach(track => track.stop())
+      }
+    }
+
+  },[])
+
+  
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+    <div className="App" style={{ textAlign: 'center', padding: '20px' }}>
+      <h1>Cata Blocos</h1>
+      <div style={{ position: 'relative', display: 'inline-block' }}>
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          style={{ 
+            transform:'rotateY(180deg)',
+            width: '640px', 
+            height: '480px', 
+            borderRadius: '10px',
+          }} /> 
+        <canvas 
+          ref={canvasRef}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none' // Garante que cliques passem para o vídeo se necessário
+          }}
+       /> 
+      
+        <div style={{
+          position: 'absolute',
+          top: 10,
+          left: 10,
+          background: 'rgba(0,0,0,0.5)',
+          color: 'white',
+          padding: '10px'
+        }}>
+        </div>     
+      </div>
+      <div style={{
+        width:'100%',
+        backgroundColor:"#fff",
+        height: '100px',
+        margin:'10px',
+        borderRadius:'20px',
+        justifyContent:'flex-start',
+        flexDirection:'row'
+      }}>
+        <p>Pontos: {pontos}</p>  
+        <button style={{
+          backgroundColor:"#4c94ff",
+          borderRadius:'10px',
+          boxShadow:'2px 2px #d1e4ff',
+          border:'none',
+          padding:'10px',
+          color:'#000000',
+          
+      }}
+      onClick={
+        ()=>restart()
+      }
+      >Reiniciar</button>
+      </div>
+      
     </div>
   );
 }
