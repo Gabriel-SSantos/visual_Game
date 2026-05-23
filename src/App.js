@@ -1,7 +1,7 @@
 import logo from './logo.svg';
 import './App.css';
 import { useEffect, useRef, useState } from 'react';
-import { FilesetResolver, DrawingUtils, HandLandmarker} from '@mediapipe/tasks-vision';
+import { FilesetResolver, HandLandmarker} from '@mediapipe/tasks-vision';
 import {HandLandmarker as MediaPipeHandLandmarker} from '@mediapipe/tasks-vision';
 
 class Quadros{
@@ -36,6 +36,7 @@ class Quadros{
     moverV(b){
       if(this.x < b.x && this.x + this.l > b.x + b.l){
         if(this.y < b.y + b.a && this.y > b.y && !this.queda){
+          this.y += 2
           this.velocity *= 2
           this.queda = true
         } else if(this.y + this.a > b.y && this.y < b.y){
@@ -66,7 +67,7 @@ function App() {
   const Height = 480
   const Width = 640
 
-  const videoRef = useRef(null)
+  const videoRef = useRef(null) 
   const canvasRef = useRef(null)
 
   const [pontos,setPontos] = useState(0)
@@ -176,7 +177,7 @@ function App() {
         video: { 
             width: { ideal: 640 }, 
             height: { ideal: 480 },
-            frameRate: { ideal: 30 } // Alinha a captura com 30 FPS
+            frameRate: { ideal: 30 } 
           }
         }
     
@@ -193,7 +194,7 @@ function App() {
     let pnts = [{x:0,y:0,z:0},{x:0,y:0,z:0}]
     
     let dedos = []
-    
+    let marks = [8,7,2,1,13,0] //Lista de landmarks 
     function predictVideo(){
       
       const video = videoRef.current
@@ -207,17 +208,23 @@ function App() {
       }
     
       frameCount++
-      
+      //Faz a análise a cada 2 frames
       if(frameCount % 2 === 0 && video.currentTime !== lastVideoTime){
         lastVideoTime = video.currentTime
         
         const result = handLandmarker.detectForVideo(video, Date.now());
-        
+        //Resultado da captura do vídeo
+
         if(result.landmarks){
           pnts = [{x:0,y:0,z:0},{x:0,y:0,z:0}]
+          //Limpar as variáveis para o caso de não ter mãos na tela 
+
           result.landmarks.forEach((landmarks,i) => {
-            console.log(i)
-            pnts[i] = landmarks[8]
+            marks.forEach((mrk,j) => {
+              pnts[j+marks.length*i] = landmarks[mrk]
+            })
+            //Para cada conjunto de mãos, adicionar no array os landmarks de cada mãos de acordo buscando os marks já definidos 
+            
           })
           for (const landmarks of result.landmarks){
             canvasCtx.save()
@@ -228,6 +235,7 @@ function App() {
       canvasCtx.clearRect(0,0,canvas.width,canvas.height)
       
       dedos = []
+      //Limpar a função para atualizar os dados 
       pnts.forEach(pnt => {
         dedos.push(new Quadros({
           x: ((1 - pnt.x)*canvas.width - 24/2),
@@ -243,12 +251,14 @@ function App() {
       })
 
       blocos.forEach(draw=>{
-        draw.moverV(dedos[1])
-        draw.moverH(dedos[1])
-        draw.moverV(dedos[0])
-        draw.moverH(dedos[0])
+        dedos.forEach(ponto => {
+          draw.moverH(ponto)
+          draw.moverV(ponto)
+        })
+      //Para cada objeto da mão, verificar se está em contato com os objetos Blocos
+
         draw.cair()
-      
+        
         if( draw.marcar(save[0]) && draw.color === 'green' ||
             draw.marcar(save[1]) && draw.color === 'red' ||
             draw.marcar(save[2]) && draw.color === 'blue'){
@@ -256,11 +266,11 @@ function App() {
 
         draw.desenhar(canvasCtx)
       })
+
       save.forEach(draw => {
         draw.desenhar(canvasCtx)
       })
      
-
       animationFrameId = requestAnimationFrame(predictVideo)
     }
 
