@@ -45,13 +45,17 @@ class Quadros{
       }
     }
     marcar(c){
-      if(this.y + this.a > c.y && this.x > c.x && this.x + this.l < c.x+c.l){
+      if(this.color !== c.color)
+        return
+      if(this.y + this.a > c.y && this.x > c.x && this.x + this.l < c.x + c.l){
         this.restart()
         this.velocity += 0.2
-        return true
+        return 1
       } else if(this.y + this.a > c.y){
          this.restart()
+         return -1
       }
+
     }
     restart(){
       this.y = Math.floor(Math.random()*-200)
@@ -140,11 +144,14 @@ function App() {
         color: 'blue'
       })
     ]
+
+    const [reiniciar, setReiniciar] = useState(false)
     function restart(){
       setPontos(0)
       blocos.forEach(bloco => {bloco.restart()})
     }
-  
+
+
   useEffect(()=>{
 
     let lastVideoTime = -1
@@ -194,7 +201,7 @@ function App() {
     let pnts = [{x:0,y:0,z:0},{x:0,y:0,z:0}]
     
     let dedos = []
-    let marks = [8,7,2,1,13,0] //Lista de landmarks 
+    let marks = [8,7,12,11,17,5] //Lista de landmarks 
     function predictVideo(){
       
       const video = videoRef.current
@@ -246,43 +253,47 @@ function App() {
         }))
       })
 
-      dedos.forEach(draw => {
-        draw.desenhar(canvasCtx)
-      })
-
-      blocos.forEach(draw=>{
-        dedos.forEach(ponto => {
-          draw.moverH(ponto)
-          draw.moverV(ponto)
-        })
-      //Para cada objeto da mão, verificar se está em contato com os objetos Blocos
-
-        draw.cair()
+      if(pontos > -4 && pontos < 49){
+          
+          dedos.forEach(draw => {
+          draw.desenhar(canvasCtx)
+          })
         
-        if( draw.marcar(save[0]) && draw.color === 'green' ||
-            draw.marcar(save[1]) && draw.color === 'red' ||
-            draw.marcar(save[2]) && draw.color === 'blue'){
-            setPontos((ponto)=> ponto + 1)} 
+        blocos.forEach(draw=>{
+          dedos.forEach(ponto => {
+            draw.moverH(ponto)
+            draw.moverV(ponto)
+          })
+        //Para cada objeto da mão, verificar se está em contato com os objetos Blocos
 
-        draw.desenhar(canvasCtx)
-      })
+          draw.cair()
+            let incremento = 0
+            incremento = (draw.marcar(save[0]) || 
+                draw.marcar(save[1]) ||
+                draw.marcar(save[2]) || 0)
 
-      save.forEach(draw => {
-        draw.desenhar(canvasCtx)
-      })
-     
+            setPontos((ponto)=> ponto + incremento)
+
+            
+
+          draw.desenhar(canvasCtx)
+        })
+        save.forEach(draw => {
+          draw.desenhar(canvasCtx)
+        })
+        
+      }
+      
       animationFrameId = requestAnimationFrame(predictVideo)
     }
 
     setupMediaPipe()
-
     return ()=>{
       cancelAnimationFrame(animationFrameId)
       if(videoRef.current?.srcObject){
         videoRef.current.srcObject.getTracks().forEach(track => track.stop())
       }
     }
-
   },[])
 
   
@@ -313,15 +324,33 @@ function App() {
           }}
        /> 
       
+        {
+        pontos > 49 || pontos < -49 &&
         <div style={{
           position: 'absolute',
-          top: 10,
-          left: 10,
-          background: 'rgba(0,0,0,0.5)',
+          top: 0,
+          left: 0,
+          display:'flex',
+          justifyContent:'center',
+          alignItems:'center',
+          width: '100%',
+          height:'100%',
+          background: 'rgba(0, 0, 0, 0.29)',
           color: 'white',
-          padding: '10px'
+          borderRadius: '10px'
         }}>
-        </div>     
+           <div 
+           style={{
+              color: '#fff',
+              fontWeight:'400',
+              fontSize:"30px",
+              padding: '10px'
+            }}>
+              {pontos > 49  && <p>PARABÉNS</p>}
+              {pontos < -49  && <p>VOCÊ PERDEU, tente novamente</p>}
+            </div>  
+        </div>  } 
+       
       </div>
       <div style={{
         width:'100%',

@@ -1,7 +1,7 @@
 {
   "name": "visualgame",
   "version": "0.1.0",
-  "homepage": ".",
+  "homepage": "https://gabriel-ssantos.github.io/visual_Game/",
   "private": true,
   "dependencies": {
     "@testing-library/dom": "^10.4.1",
